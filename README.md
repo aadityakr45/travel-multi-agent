@@ -116,6 +116,28 @@ If you want to experiment with the example weather adapter, start the MCP server
 python custom_weather_mcp_server.py
 ```
 
+# 🏗️ System Architecture
+
+The architecture below illustrates the end-to-end workflow of **Voyanta AI**, a production-inspired multi-agent travel planning system built with LangGraph, MCP, Supervisor Agent, Guardrails, and Human-in-the-Loop (HITL).
+
+<p align="center">
+  <img src="assets\Voyanta_architecture.png" alt="Voyanta AI Architecture" width="1000">
+</p>
+
+### Key Components
+
+- 🛡️ Input Guardrails for request validation
+- 🤖 Supervisor Agent for dynamic agent orchestration
+- ✈️ Flight Agent (AviationStack MCP)
+- 🏨 Hotel Agent (Tavily MCP)
+- 🌤️ Weather Agent (Custom Weather MCP)
+- 💰 Budget Agent
+- 🗺️ Itinerary Agent
+- 👤 Human-in-the-Loop (Approval & Revision)
+- 💬 Final Response Agent
+- 🗄️ PostgreSQL for long-term memory
+- 🔄 LangGraph Shared State for cross-agent communication
+
 ## API Endpoints
 
 - `POST /api/travel` - create a new planning run or continue an existing thread  

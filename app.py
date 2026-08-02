@@ -3,7 +3,7 @@ import traceback
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -31,6 +31,11 @@ app.mount(
     "/static",
     StaticFiles(directory=str(BASE_DIR / "static")),
     name="static",
+)
+app.mount(
+    "/assets", 
+    StaticFiles(directory="assets"), 
+    name="assets"
 )
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -148,7 +153,10 @@ async def health_check():
 
 @app.get("/favicon.ico")
 async def favicon():
-    return JSONResponse(content={})
+    return FileResponse(
+        BASE_DIR / "assets" / "voyanta_fv.png",
+        media_type="image/png",
+    )
 
 
 if __name__ == "__main__":

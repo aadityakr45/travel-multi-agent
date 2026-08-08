@@ -27,6 +27,8 @@
       <div class="topbar-context">
         <span class="context-kicker">Workspace</span>
         <span class="context-name">Travel intelligence</span>
+        <span class="context-divider" aria-hidden="true"></span>
+        <span class="context-detail">Research · review · route</span>
       </div>
 
       <div class="topbar-actions">
@@ -105,18 +107,29 @@
 
         <section class="conversation-scroll" id="conversationScroll">
           <div class="welcome-state" id="welcomeState">
-            <div class="welcome-symbol" aria-hidden="true">
-              <span class="symbol-ring ring-one"></span>
-              <span class="symbol-ring ring-two"></span>
-              <span class="symbol-center"></span>
+            <div class="welcome-main">
+              <div class="welcome-symbol" aria-hidden="true">
+                <span class="symbol-ring ring-one"></span>
+                <span class="symbol-ring ring-two"></span>
+                <span class="symbol-center"></span>
+              </div>
+              <span class="welcome-eyebrow">Voyanta AI / Travel intelligence</span>
+              <h2>Make room for the <em>good</em> parts.</h2>
+              <p>Describe the trip you’re imagining. Voyanta brings together flights, stays, weather, budget, and itinerary research into one route you can actually review.</p>
+              <div class="welcome-trust">
+                <span><i>01</i> Research the details</span>
+                <span><i>02</i> Review the trade-offs</span>
+                <span><i>03</i> Take the route</span>
+              </div>
             </div>
-            <span class="welcome-eyebrow">Voyanta AI / Travel intelligence</span>
-            <h2>Where should we take you?</h2>
-            <p>Tell Voyanta what you have in mind. A network of specialist agents will research the route, pressure-test the budget, and shape the itinerary with you.</p>
-            <div class="welcome-trust">
-              <span><i>01</i> Multi-agent research</span>
-              <span><i>02</i> Human review</span>
-              <span><i>03</i> Exportable plan</span>
+            <div class="welcome-signal-card">
+              <div class="signal-card-topline">
+                <span><span class="signal-live-dot"></span> Network ready</span>
+                <span class="signal-card-index">VOY / 01</span>
+              </div>
+              <div class="signal-card-title">One thoughtful prompt.<br><strong>A complete route.</strong></div>
+              <div class="signal-lines" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+              <div class="signal-card-meta"><span>09 specialists</span><span>01 human review</span></div>
             </div>
           </div>
 
@@ -192,6 +205,7 @@
 
         <section class="composer-zone" aria-label="Travel prompt composer">
           <div class="quick-prompts" id="quickPrompts">
+            <span class="quick-prompts-label">Start with a brief</span>
             <button type="button" onclick="setPrompt('Plan a complete 7 days Switzerland trip from India including flights, hotels and sightseeing under 2 lakhs.')">Switzerland, 7 days</button>
             <button type="button" onclick="setPrompt('Plan a 5 days Dubai trip from Delhi with flights, hotels and sightseeing.')">Dubai from Delhi</button>
             <button type="button" onclick="setPrompt('Plan a 7 days Thailand trip from Bangalore with budget hotels and sightseeing.')">Thailand on a budget</button>

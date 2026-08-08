@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Project-specific additions ---
+
+# Custom virtual environment name
+mtvenv/
+
+# Environment files (allow a committed template)
+.env.*
+!.env.example
+
+# Node.js — ignore dependency folders anywhere in the repo
+node_modules
+
+# IDE / editor
+.vscode/
+!.vscode/extensions.json
+.idea/
+.cursor/
+
+# AI assistant local settings
+.claude/
+.playwright-mcp/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

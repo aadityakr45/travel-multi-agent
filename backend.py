@@ -112,6 +112,20 @@ AGENT_ORDER = [
     "itinerary_agent",
 ]
 
+# Single source of truth for every specialist agent's content: where its
+# output lives in state, and how to label it in the final answer. This
+# drives which agents are candidates for removal, how the final prompt's
+# sections are built, and what gets cleared when an agent is removed -
+# adding a future agent here is the only change needed for it to be
+# selectable for removal, with no per-agent branches elsewhere.
+AGENT_CONTENT_SPEC: dict[str, tuple[str, str]] = {
+    "flight_agent": ("flight_results", "Flight Information"),
+    "hotel_agent": ("hotel_results", "Hotel Suggestions"),
+    "weather_agent": ("weather_results", "Weather Information"),
+    "budget_agent": ("budget_results", "Budget Analysis"),
+    "itinerary_agent": ("itinerary", "Day-by-Day Itinerary"),
+}
+
 
 def _llm_text(system_prompt: str, user_prompt: str) -> str:
     response = llm.invoke(
@@ -132,6 +146,57 @@ def _json_from_llm(text: str) -> dict[str, Any]:
         raise ValueError("The model did not return a JSON object.")
 
     return json.loads(text[start : end + 1])
+
+
+def _detect_agents_to_remove(
+    feedback: str,
+    candidate_agents: list[str],
+) -> list[str]:
+    """
+    Ask the model whether revision feedback wants any of the currently
+    selected specialist agents dropped entirely, rather than just reworded.
+
+    Fails open (returns []) on any error so a detection failure never
+    breaks the existing revise-and-finalize flow.
+    """
+
+    if not feedback or not candidate_agents:
+        return []
+
+    prompt = f"""
+A user reviewed a draft travel plan and requested a revision. Determine
+whether their feedback asks to remove ANY of the following categories of
+information ENTIRELY from the plan, as opposed to just improving or
+rewording them.
+
+Categories currently included: {candidate_agents}
+
+User feedback:
+{feedback}
+
+Return strict JSON only using this schema:
+{{"remove": ["hotel_agent"]}}
+
+Only include agent names from the categories list above that the user
+clearly wants removed entirely. Return an empty list if nothing should be
+removed.
+"""
+
+    try:
+        raw = _llm_text(
+            "You classify travel-plan revision feedback. Return strict JSON only.",
+            prompt,
+        )
+        parsed = _json_from_llm(raw)
+        remove = parsed.get("remove", [])
+        return [
+            agent
+            for agent in remove
+            if agent in candidate_agents
+        ]
+    except Exception as exc:
+        print(f"Agent-removal detection fallback used: {exc}")
+        return []
 
 
 def _empty_constraints() -> dict[str, Any]:
@@ -214,11 +279,27 @@ Available agents:
 - hotel_agent: hotels, accommodation, neighborhoods, or places to stay
 - weather_agent: weather, climate, season, forecast, or packing advice
 - budget_agent: cost, affordability, price limits, or budget feasibility
-- itinerary_agent: creates the integrated travel plan and must always be included
+- itinerary_agent: creates a day-by-day itinerary for a multi-day trip.
+
+Also classify the request as one of:
+- "point_to_point": the request is essentially just movement/transit between
+  two places, with no indication of staying, exploring, or spending time at
+  the destination. Examples: "flights from Goa to Kolkata", "make a trip from
+  Goa to Kolkata", "go from Delhi to Mumbai". This is still true even if the
+  request uses the word "trip" - that word alone does not imply a vacation.
+- "multi_day_trip": the request implies a vacation, staying at the
+  destination, sightseeing/activities, or explicitly mentions a duration or
+  asks to plan/organize an itinerary. When genuinely ambiguous (e.g. "weekend
+  trip to Goa", "plan my Goa vacation"), classify as "multi_day_trip".
+
+A "point_to_point" classification means itinerary_agent must NOT be
+selected, regardless of whether other agents like hotel_agent are needed for
+the journey itself (e.g. an overnight layover does not make it a vacation).
 
 Return strict JSON only using this schema:
 {{
   "selected_agents": ["flight_agent", "hotel_agent", "weather_agent", "budget_agent", "itinerary_agent"],
+  "request_type": "point_to_point",
   "trip_constraints": {{
     "destination": "",
     "origin": "",
@@ -246,14 +327,30 @@ User request:
             if name in requested_agents and name in KNOWN_AGENTS
         ]
 
-        # The itinerary agent integrates whichever specialist results were selected.
-        if "itinerary_agent" not in selected_agents:
-            selected_agents.append("itinerary_agent")
-
         constraints = _empty_constraints()
         parsed_constraints = parsed.get("trip_constraints", {})
         if isinstance(parsed_constraints, dict):
             constraints.update(parsed_constraints)
+
+        # Deterministically enforce point-to-point requests rather than
+        # trusting the model's own request_type/selected_agents judgment for
+        # this one decision - it is biased toward assuming a full trip plan
+        # is wanted whenever the word "trip" appears, even when told
+        # otherwise. If nothing beyond origin/destination was extracted
+        # (no duration, budget, travel style, or preferences), there is no
+        # real trip-planning context, so itinerary_agent is dropped
+        # regardless of what the model classified.
+        request_type = str(parsed.get("request_type", "")).strip()
+        has_trip_context = bool(
+            str(constraints.get("duration", "")).strip()
+            or str(constraints.get("budget", "")).strip()
+            or str(constraints.get("travel_style", "")).strip()
+            or constraints.get("special_preferences")
+        )
+        if request_type == "point_to_point" or not has_trip_context:
+            selected_agents = [
+                name for name in selected_agents if name != "itinerary_agent"
+            ]
 
         reasoning = str(parsed.get("reasoning", "")).strip()
         llm_calls += 1
@@ -492,8 +589,23 @@ If exact live prices are unavailable, clearly label estimates as approximate.
 # Itinerary Agent - original behavior extended with selected results
 # =========================
 def itinerary_agent(state: TravelState):
+    wants_itinerary = "itinerary_agent" in state.get("selected_agents", [])
+
+    if wants_itinerary:
+        task_instruction = (
+            "Create a complete day-by-day travel itinerary. Make it practical, "
+            "budget-aware, and easy to follow."
+        )
+    else:
+        task_instruction = (
+            "This is a narrow, single-purpose request, not a multi-day trip "
+            "plan. Do not invent a day-by-day itinerary or an arbitrary "
+            "number of days. Write a short, direct answer that addresses "
+            "exactly what was asked, using the specialist results below."
+        )
+
     prompt = f"""
-Create a complete travel itinerary.
+{task_instruction}
 
 User Query:
 {state['user_query']}
@@ -513,7 +625,6 @@ Weather Results:
 Budget Results:
 {state.get('budget_results', '')}
 
-Make the itinerary practical, budget-aware, and easy to follow.
 Create a clear draft that is ready for human review.
 """
 
@@ -570,15 +681,60 @@ def human_approval_agent(state: TravelState):
 # Final Response Agent - original format kept, HITL feedback added
 # =========================
 def final_agent(state: TravelState):
-    if state.get("approved", False):
+    llm_calls = state.get("llm_calls", 0)
+    selected_agents = state.get("selected_agents", [])
+    human_feedback = state.get("human_feedback", "")
+    approved = state.get("approved", False)
+
+    agents_to_remove: list[str] = []
+    if not approved and human_feedback:
+        candidate_agents = [
+            agent for agent in selected_agents if agent in AGENT_CONTENT_SPEC
+        ]
+        agents_to_remove = _detect_agents_to_remove(
+            human_feedback, candidate_agents
+        )
+        if agents_to_remove:
+            llm_calls += 1
+
+    updated_selected_agents = [
+        agent for agent in selected_agents if agent not in agents_to_remove
+    ]
+
+    if approved:
         review_instruction = (
             "The user approved the draft. Preserve its decisions while polishing it."
         )
     else:
         review_instruction = f"""
 The user requested a revision. Apply this feedback carefully:
-{state.get('human_feedback', '') or 'Improve the draft before finalizing it.'}
+{human_feedback or 'Improve the draft before finalizing it.'}
 """
+
+    if agents_to_remove:
+        removed_labels = [
+            AGENT_CONTENT_SPEC[agent][1] for agent in agents_to_remove
+        ]
+        review_instruction += f"""
+The user also asked to remove the following entirely: {", ".join(removed_labels)}.
+Do not include a section for any of these, and do not mention them anywhere
+else in the response (including the day-by-day itinerary), even if the
+draft itinerary below still references them.
+"""
+
+    content_blocks = ""
+    output_sections = ["Trip Summary"]
+    for agent in AGENT_ORDER:
+        if agent not in AGENT_CONTENT_SPEC or agent not in updated_selected_agents:
+            continue
+        field_name, label = AGENT_CONTENT_SPEC[agent]
+        content_blocks += f"\n{label}:\n{state.get(field_name, '')}\n"
+        output_sections.append(label)
+    output_sections.append("Final Recommendations")
+
+    numbered_sections = "\n".join(
+        f"{i}. {label}" for i, label in enumerate(output_sections, start=1)
+    )
 
     final_prompt = f"""
 Generate the final travel response for the user.
@@ -591,30 +747,10 @@ User Request:
 
 Supervisor Constraints:
 {state.get('trip_constraints', {})}
-
-Flights:
-{state.get('flight_results', '')}
-
-Hotels:
-{state.get('hotel_results', '')}
-
-Weather:
-{state.get('weather_results', '')}
-
-Budget Analysis:
-{state.get('budget_results', '')}
-
-Draft Itinerary:
-{state.get('itinerary', '')}
+{content_blocks}
 
 Format the final answer beautifully using these sections:
-1. Trip Summary
-2. Flight Information
-3. Hotel Suggestions
-4. Weather Information
-5. Day-by-Day Itinerary
-6. Estimated Budget
-7. Final Recommendations
+{numbered_sections}
 
 Important:
 - Be clear and practical.
@@ -633,10 +769,16 @@ Important:
         ]
     )
 
+    cleared_fields = {
+        AGENT_CONTENT_SPEC[agent][0]: "" for agent in agents_to_remove
+    }
+
     return {
         "final_response": response.content,
         "messages": [response],
-        "llm_calls": state.get("llm_calls", 0) + 1,
+        "selected_agents": updated_selected_agents,
+        "llm_calls": llm_calls + 1,
+        **cleared_fields,
     }
 
 
@@ -841,3 +983,108 @@ def resume_travel_agent(
     )
 
     return _serialize_result(result, thread_id)
+
+
+def get_travel_thread(thread_id: str) -> dict[str, Any] | None:
+    """
+    Fetch the persisted state for an existing thread without advancing it.
+
+    Returns None if the thread has never been run (LangGraph reports this
+    as an empty-values snapshot rather than raising).
+    """
+    if not thread_id:
+        raise ValueError("thread_id is required to fetch a travel plan.")
+
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = travel_graph.get_state(config)
+
+    if not snapshot.values:
+        return None
+
+    result = dict(snapshot.values)
+    if snapshot.interrupts:
+        result["__interrupt__"] = list(snapshot.interrupts)
+
+    return _serialize_result(result, thread_id)
+
+
+def _stream_graph_events(stream_input: Any, config: dict, thread_id: str):
+    """
+    Drive the graph with .stream(stream_mode="updates") and yield one event
+    per completed node, ending with either an "awaiting_approval" event (the
+    graph paused at the human-in-the-loop interrupt) or a "complete" event
+    (the graph reached END) - both carrying the same serialized shape
+    run_travel_agent/resume_travel_agent already return, via get_travel_thread.
+    """
+    for chunk in travel_graph.stream(
+        stream_input, config=config, stream_mode="updates"
+    ):
+        if "__interrupt__" in chunk:
+            yield {
+                "event": "awaiting_approval",
+                "thread_id": thread_id,
+                "data": get_travel_thread(thread_id),
+            }
+            return
+
+        for node_name in chunk:
+            yield {
+                "event": "node",
+                "node": node_name,
+                "thread_id": thread_id,
+            }
+
+    yield {
+        "event": "complete",
+        "thread_id": thread_id,
+        "data": get_travel_thread(thread_id),
+    }
+
+
+def stream_travel_agent(user_input: str, thread_id: str | None = None):
+    """Streaming counterpart to run_travel_agent - yields node-by-node events."""
+    if not thread_id:
+        thread_id = f"user_{uuid.uuid4().hex}"
+
+    config = {"configurable": {"thread_id": thread_id}}
+    initial_state = {
+        "messages": [HumanMessage(content=user_input)],
+        "user_query": user_input,
+        "guardrail_allowed": True,
+        "guardrail_reason": "",
+        "selected_agents": [],
+        "trip_constraints": _empty_constraints(),
+        "supervisor_reasoning": "",
+        "flight_results": "",
+        "hotel_results": "",
+        "weather_results": "",
+        "budget_results": "",
+        "itinerary": "",
+        "approval_request": "",
+        "approved": False,
+        "human_feedback": "",
+        "final_response": "",
+        "llm_calls": 0,
+    }
+
+    yield from _stream_graph_events(initial_state, config, thread_id)
+
+
+def stream_resume_travel_agent(
+    thread_id: str,
+    approved: bool,
+    feedback: str = "",
+):
+    """Streaming counterpart to resume_travel_agent - yields node-by-node events."""
+    if not thread_id:
+        raise ValueError("thread_id is required to resume a travel plan.")
+
+    config = {"configurable": {"thread_id": thread_id}}
+    resume_input = Command(
+        resume={
+            "approved": approved,
+            "feedback": feedback.strip(),
+        }
+    )
+
+    yield from _stream_graph_events(resume_input, config, thread_id)

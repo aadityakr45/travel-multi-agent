@@ -1,0 +1,158 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Voyanta AI brand palette, ported from the original static/style.css
+ * (--accent teal / --accent-warm gold) into shadcn's semantic token set.
+ */
+:root {
+  --background: #f7fafa;
+  --foreground: #0b1720;
+
+  --card: #ffffff;
+  --card-foreground: #0b1720;
+  --popover: #ffffff;
+  --popover-foreground: #0b1720;
+
+  --primary: #0f766e;
+  --primary-foreground: #f8fafc;
+
+  --secondary: #eef4f3;
+  --secondary-foreground: #0b1720;
+
+  --muted: #eef4f3;
+  --muted-foreground: #5b6b70;
+
+  --accent: #e3f3f0;
+  --accent-foreground: #0f766e;
+
+  --destructive: #b53b3b;
+  --destructive-foreground: #f8fafc;
+
+  --success: #0f9d6e;
+  --success-foreground: #f8fafc;
+
+  --warning: #a86d1d;
+  --warning-foreground: #f8fafc;
+
+  --border: #dde6e5;
+  --input: #dde6e5;
+  --ring: #33c3b3;
+
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: #08121a;
+  --foreground: #f8fafc;
+
+  --card: #101f2a;
+  --card-foreground: #f8fafc;
+  --popover: #101f2a;
+  --popover-foreground: #f8fafc;
+
+  --primary: #33c3b3;
+  --primary-foreground: #04211d;
+
+  --secondary: #142832;
+  --secondary-foreground: #f8fafc;
+
+  --muted: #17262d;
+  --muted-foreground: #a9bac6;
+
+  --accent: #1c3d44;
+  --accent-foreground: #f8fafc;
+
+  --destructive: #f7b4b4;
+  --destructive-foreground: #3a0d0d;
+
+  --success: #5ed6b6;
+  --success-foreground: #04211d;
+
+  --warning: #d6a24a;
+  --warning-foreground: #2a1a02;
+
+  --border: rgba(128, 155, 169, 0.24);
+  --input: rgba(109, 146, 158, 0.34);
+  --ring: #33c3b3;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-card/85 backdrop-blur-xl border border-border/70 rounded-3xl shadow-sm;
+  }
+
+  /*
+   * Reusable ambient glow layer for premium dark surfaces (app shell, hero,
+   * auth). Painted as radial-gradient(s) directly on this element's own
+   * background (each call site supplies its own via the `background` inline
+   * style) rather than blurred child elements - a child-span + filter:blur
+   * approach was tried first and silently failed to paint in this app's
+   * layout (confirmed empirically: even a forced opaque, unblurred,
+   * z-index:9999 child span rendered nothing), while a plain background
+   * gradient is exactly what the original pre-rebuild app used successfully.
+   * Purely decorative - always aria-hidden and pointer-events-none at the
+   * call site - and intentionally faint in light mode.
+   */
+  .ambient-bg {
+    @apply pointer-events-none absolute inset-0 -z-10 opacity-40 dark:opacity-100;
+  }
+}

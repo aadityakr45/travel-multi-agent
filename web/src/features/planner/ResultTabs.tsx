@@ -21,7 +21,9 @@ export function ResultTabs({
   result: TravelResult
   title: string
 }) {
-  const overview = result.requires_approval ? result.itinerary : result.answer
+  const overview = result.requires_approval
+    ? result.itinerary ?? result.answer
+    : result.answer
 
   const sections = useMemo(() => {
     return (Object.keys(SECTION_AGENT) as AgentName[])

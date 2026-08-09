@@ -1,178 +1,243 @@
 # Voyanta AI
 
-Voyanta AI is a multi-agent travel planning  built with LangGraph, MCP, and FastAPI. It shows how a supervisor-led workflow, input guardrails, and human-in-the-loop approval can work together to generate travel itineraries in a safer, more reviewable way.
+Voyanta AI is a multi-agent travel planner built with LangGraph, MCP, FastAPI, and React. It uses a supervisor-led workflow, input guardrails, specialist travel agents, streaming progress updates, and human approval to produce reviewable travel itineraries.
 
-## Overview
+## What it includes
 
-This project combines:
+- LangGraph orchestration with a supervisor and specialist agents
+- Flight, hotel, weather, budget, and itinerary planning agents
+- MCP integrations for Tavily and custom weather tooling
+- Input guardrails for travel-planning requests
+- Human-in-the-loop draft approval and revision feedback
+- Server-sent event (SSE) streaming for live workflow progress
+- React 19 + TypeScript + Vite frontend
+- Trip history stored in the browser and client-side light/dark theme support
+- Markdown rendering, copy-to-clipboard, and PDF export
+- FastAPI API and SPA fallback for client-side routes
+- Docker image that builds the React app and runs the FastAPI server
 
-- LangGraph for multi-step orchestration
-- MCP for tool and adapter integration
-- A supervisor pattern for routing tasks across specialized agents
-- Guardrails for validating user requests
-- Human approval before final itinerary generation
-- A FastAPI web interface for interacting with the system
+## Architecture
 
-The app can coordinate tasks such as flight research, hotel suggestions, weather checks, budget review, and itinerary drafting.
+The backend coordinates the travel-planning graph, while the React frontend communicates with it through JSON and SSE endpoints:
 
-## Features
+```text
+React + Vite frontend
+          |
+          v
+FastAPI API and SPA server
+          |
+          v
+LangGraph supervisor and specialist agents
+          |
+          +--> AviationStack flight data
+          +--> Tavily hotel/web search
+          +--> Custom weather MCP server
+          +--> PostgreSQL checkpointing
+```
 
-- Interactive web UI for submitting travel planning requests
-- Supervisor-based routing across multiple travel agents
-- Input guardrail checks before planning begins
-- Draft approval and revision flow before final output
-- PDF export for generated travel plans
-- Example custom MCP server for weather-related tooling
+<p align="center">
+  <img src="assets/Voyanta_architecture.png" alt="Voyanta AI architecture" width="1000">
+</p>
 
-## Project Structure
+## Project structure
 
-- `app.py` - FastAPI app, routes, and frontend serving
-- `backend.py` - core orchestration and travel-planning workflow
-- `mcp_client.py` - MCP client helpers used by the app
-- `custom_weather_mcp_server.py` - example MCP server for weather checks
-- `templates/index.html` - main frontend page
-- `static/style.css` - frontend styling
-- `static/script.js` - frontend interaction logic
+```text
+.
+├── app.py                         # FastAPI app, API routes, and frontend serving
+├── backend.py                     # LangGraph workflow and travel agents
+├── mcp_client.py                  # MCP client configuration and helpers
+├── custom_weather_mcp_server.py   # Custom OpenWeather MCP server
+├── tools/                         # Flight and Tavily helper tools
+├── templates/index.html            # Legacy Jinja2 frontend fallback
+├── static/                        # Legacy frontend CSS and JavaScript
+├── web/                           # React + TypeScript + Vite frontend
+│   ├── src/routes/                # Trip, history, settings, auth, and info pages
+│   ├── src/features/planner/      # Planner form, workflow, approval, and export UI
+│   ├── src/components/            # Shared and UI components
+│   └── package.json               # Frontend scripts and dependencies
+├── assets/                        # Architecture diagram and favicon
+├── requirements.txt               # Python dependencies
+├── Dockerfile                     # Multi-stage frontend and backend image build
+└── .env.example                   # Environment variable template
+```
 
-## How The Workflow Works
+## How the workflow works
 
-1. A user submits a travel request from the Voyanta AI web interface.
-2. The input guardrail checks whether the request is appropriate for the travel-planning workflow.
-3. The supervisor decides which specialist agents should be involved.
-4. The system generates a draft itinerary.
-5. If approval is required, the user can approve the draft or request revisions.
-6. The final itinerary is returned and can be exported as a PDF.
+1. A user submits a travel request from the React planner.
+2. The input guardrail validates the request.
+3. The supervisor selects the specialist agents needed for the request.
+4. The agents research and prepare a draft itinerary.
+5. The frontend receives live node updates through an SSE stream.
+6. The user approves the draft or submits revision feedback.
+7. The final itinerary can be copied or exported as a PDF.
 
 ## Prerequisites
 
 - Python 3.10 or newer
-- Git
-- A virtual environment tool such as `venv`
+- Node.js 20.19+ or 22.12+ and npm
+- PostgreSQL, if using persistent LangGraph checkpointing
+- API keys for the external services used by your configuration
 
-## Setup
+## Environment configuration
 
-### 1. Clone the repository
+Copy the example file and fill in the values needed by your setup:
 
 ```powershell
-git clone <https://github.com/aadityakr45/travel-multi-agent.git>
-cd travel-multi-agent
+Copy-Item .env.example .env
 ```
 
-### 2. Create and activate a virtual environment
+The available variables are:
+
+- `GROQ_API_KEY` - LLM used by the supervisor and specialist agents
+- `TAVILY_API_KEY` - Tavily search used by the hotel agent
+- `AVIATIONSTACK_API_KEY` - flight and airport data
+- `OPENWEATHER_API_KEY` - weather data used by the custom MCP server
+- `DATABASE_URL` - PostgreSQL connection string for LangGraph checkpoints
+- `DEFAULT_ORIGIN_IATA` - default departure airport IATA code
+- `LANGSMITH_API_KEY` - optional LangSmith tracing key
+- `LANGSMITH_TRACKING` - optional LangSmith tracing toggle
+- `LANGSMITH_ENDPOINT` - optional LangSmith endpoint
+- `LANGSMITH_PROJECT` - optional LangSmith project name
+
+Do not commit your `.env` file or real API keys.
+
+## Local development
+
+### 1. Install backend dependencies
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-### 3. Install dependencies
-
-```powershell
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### 2. Start the FastAPI backend
 
-Create a `.env` file in the project root and provide the keys your setup needs.
-
-Common variables used by this project:
-
-- `GROQ_API_KEY`
-- `TAVILY_API_KEY`
-- `AVIATIONSTACK_API_KEY`
-- `OPENWEATHER_API_KEY`
-- `DATABASE_URL`
-- `DEFAULT_ORIGIN_IATA`
-- `LANGSMITH_API_KEY`
-- `LANGSMITH_TRACKING`
-- `LANGSMITH_ENDPOINT`
-- `LANGSMITH_PROJECT`
-
-## Run The App
-
-Start the FastAPI app in either of these ways:
+From the repository root:
 
 ```powershell
 python app.py
 ```
 
-or
+The API runs at `http://127.0.0.1:8000`.
+
+### 3. Start the React development server
+
+In a second terminal:
 
 ```powershell
-uvicorn app:app --reload --host 127.0.0.1 --port 8000
+cd web
+npm ci
+npm run dev
 ```
 
-Then open:
+Open the Vite URL shown in the terminal, usually `http://localhost:5173`. The Vite development server proxies `/api` requests to the FastAPI server on port 8000.
 
-```text
-http://127.0.0.1:8000
+## Production-style local run
+
+Build the React frontend, then start FastAPI from the repository root:
+
+```powershell
+cd web
+npm ci
+npm run build
+cd ..
+python app.py
 ```
 
-## Run The Example MCP Server
+The built files are written to `web/dist`. When that directory exists, FastAPI serves the React SPA at `http://127.0.0.1:8000`. If it has not been built, the app falls back to the legacy Jinja2 page in `templates/index.html`.
 
-If you want to experiment with the example weather adapter, start the MCP server in a separate terminal:
+Useful frontend commands from `web/`:
+
+```powershell
+npm run dev      # Start Vite with hot reload
+npm run build    # Type-check and create a production build
+npm run lint     # Run Oxlint
+npm run preview  # Preview the production build with Vite
+```
+
+## Docker
+
+The Dockerfile uses a multi-stage build: Node builds the React frontend, and Python runs the FastAPI application with the generated `web/dist` files.
+
+```powershell
+docker build -t voyanta-ai .
+docker run --env-file .env -p 8000:8000 voyanta-ai
+```
+
+Then open `http://localhost:8000`.
+
+## React frontend routes
+
+- `/trips/new` - start a new trip
+- `/trips/:threadId` - view or continue a trip
+- `/history` - view trips saved in the browser
+- `/settings` - frontend settings
+- `/login` and `/signup` - frontend auth screens
+- `/how-it-works`, `/about`, and `/privacy` - informational pages
+
+## API endpoints
+
+### `POST /api/travel`
+
+Create a planning run or continue an existing thread.
+
+```json
+{
+  "message": "Plan a five-day trip to Kyoto",
+  "thread_id": "optional-thread-id"
+}
+```
+
+### `POST /api/travel/stream`
+
+Start a planning run and receive workflow events as an SSE stream. The request body is the same as `/api/travel`.
+
+### `POST /api/travel/approve`
+
+Approve a draft or request revisions.
+
+```json
+{
+  "thread_id": "thread-id",
+  "approved": false,
+  "feedback": "Add a day trip and choose a hotel closer to the station."
+}
+```
+
+### `POST /api/travel/approve/stream`
+
+Resume an approval or revision decision and receive workflow events as an SSE stream. The request body is the same as `/api/travel/approve`.
+
+### `GET /api/travel/{thread_id}`
+
+Fetch the current state and result for a travel thread.
+
+### `GET /health`
+
+Return a basic API health response.
+
+## Optional weather MCP server
+
+The custom weather MCP server can be run independently for experimentation:
 
 ```powershell
 python custom_weather_mcp_server.py
 ```
 
-# 🏗️ System Architecture
+The application configures this server through `mcp_client.py` when weather tools are requested.
 
-The architecture below illustrates the end-to-end workflow of **Voyanta AI**, a production-inspired multi-agent travel planning system built with LangGraph, MCP, Supervisor Agent, Guardrails, and Human-in-the-Loop (HITL).
+## Notes
 
-<p align="center">
-  <img src="assets\Voyanta_architecture.png" alt="Voyanta AI Architecture" width="1000">
-</p>
-
-### Key Components
-
-- 🛡️ Input Guardrails for request validation
-- 🤖 Supervisor Agent for dynamic agent orchestration
-- ✈️ Flight Agent (AviationStack MCP)
-- 🏨 Hotel Agent (Tavily MCP)
-- 🌤️ Weather Agent (Custom Weather MCP)
-- 💰 Budget Agent
-- 🗺️ Itinerary Agent
-- 👤 Human-in-the-Loop (Approval & Revision)
-- 💬 Final Response Agent
-- 🗄️ PostgreSQL for long-term memory
-- 🔄 LangGraph Shared State for cross-agent communication
-
-## API Endpoints
-
-- `POST /api/travel` - create a new planning run or continue an existing thread  
-  Body: `{ "message": "<user prompt>", "thread_id": "optional-thread-id" }`
-- `POST /api/travel/approve` - approve a draft or request revisions  
-  Body: `{ "thread_id": "<id>", "approved": true|false, "feedback": "optional" }`
-- `GET /health` - basic health check
-
-## Frontend
-
-The frontend is a server-rendered single-page interface built with:
-
-- FastAPI templates via Jinja2
-- Custom CSS in `static/style.css`
-- Vanilla JavaScript in `static/script.js`
-- `marked` for markdown rendering
-- `html2pdf.js` for PDF export
-
-## Development Notes
-
-- `nest_asyncio` is applied in `app.py` so synchronous helper functions can call async MCP-related code inside FastAPI.
-- The repository is focused on demonstrating orchestration patterns rather than production hardening.
-- Automated tests are not included in the current project.
+- Authentication screens are currently frontend routes; the repository does not include a user-account backend.
+- Trip history is stored locally in the browser by the React frontend.
+- The project demonstrates orchestration and approval patterns and is not yet production-hardened.
+- Automated tests are not currently included.
 
 ## Contributing
 
-Contributions are welcome for:
-
-- documentation improvements
-- bug fixes
-- UI polish
-- new MCP adapters or examples
-
-Please open an issue or submit a pull request if you would like to contribute.
+Contributions are welcome, including documentation improvements, bug fixes, frontend polish, new agents, and MCP adapters. Please open an issue or submit a pull request.
 
 ## License
 
-This project follows the license in [LICENSE](LICENSE).
+This project is licensed under the terms in [LICENSE](LICENSE).

@@ -181,7 +181,9 @@ export function TripPage() {
           {isBusy && <WorkflowStepperSkeleton />}
 
           {!isBusy && result && phase === "blocked" && (
-            <BlockedState reason={result.guardrail_reason} />
+            <BlockedState
+              reason={result.guardrail_reason ?? "This request is outside the supported travel-planning scope."}
+            />
           )}
 
           {!isBusy && result && phase !== "blocked" && (

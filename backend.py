@@ -14,6 +14,7 @@ import json
 import psycopg
 from psycopg.rows import dict_row
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import Command, interrupt
 from langchain_core.messages import (
@@ -388,6 +389,30 @@ def guardrail_blocked_agent(state: TravelState):
     }
 
 
+def _normalize_agent_result(value: Any) -> str:
+    """Convert MCP/LangChain content into the string shape used by the UI."""
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            elif isinstance(item, dict):
+                parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "\n\n".join(part for part in parts if part.strip())
+
+    if isinstance(value, dict):
+        if isinstance(value.get("text"), str):
+            return value["text"]
+        return json.dumps(value, ensure_ascii=False)
+
+    return str(value)
+
+
 # =========================
 # Flight Agent - original behavior kept
 # =========================
@@ -460,8 +485,8 @@ def hotel_agent(state: TravelState):
     )
 
     try:
-        hotel_results = asyncio.run(
-            tavily_mcp_search(query)
+        hotel_results = _normalize_agent_result(
+            asyncio.run(tavily_mcp_search(query))
         )
 
     except Exception as exc:
@@ -495,9 +520,23 @@ def hotel_agent(state: TravelState):
 # Weather Agent - original behavior kept
 # =========================
 def weather_agent(state: TravelState):
-    city = extract_destination(
-        state["user_query"]
-    )
+    try:
+        city = extract_destination(state["user_query"])
+    except Exception as exc:
+        city = str(state.get("trip_constraints", {}).get("destination", "")).strip()
+        if not city:
+            city = "the requested destination"
+        print(
+            f"WEATHER DESTINATION ERROR: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        return {
+            "weather_results": (
+                f"Live weather information for {city} is temporarily unavailable. "
+                "Verify the forecast before departure."
+            ),
+            "messages": [AIMessage(content="Weather information unavailable.")],
+        }
 
     try:
         weather_data = asyncio.run(
@@ -510,10 +549,10 @@ def weather_agent(state: TravelState):
 
         weather_results = f"""
 Current Weather:
-{weather_data}
+{_normalize_agent_result(weather_data)}
 
 Forecast:
-{forecast_data}
+{_normalize_agent_result(forecast_data)}
 """
 
     except Exception as exc:
@@ -571,15 +610,23 @@ Return:
 If exact live prices are unavailable, clearly label estimates as approximate.
 """
 
-    response = llm.invoke(
-        [
-            SystemMessage(content="You are a practical travel budget analyst."),
-            HumanMessage(content=prompt),
-        ]
-    )
+    try:
+        response = llm.invoke(
+            [
+                SystemMessage(content="You are a practical travel budget analyst."),
+                HumanMessage(content=prompt),
+            ]
+        )
+        budget_results = str(response.content)
+    except Exception as exc:
+        print(f"BUDGET AGENT ERROR: {type(exc).__name__}: {exc}", flush=True)
+        budget_results = (
+            "Live budget analysis is temporarily unavailable. Treat all prices "
+            "as estimates and verify current fares before booking."
+        )
 
     return {
-        "budget_results": response.content,
+        "budget_results": budget_results,
         "messages": [AIMessage(content="Budget assessment generated.")],
         "llm_calls": state.get("llm_calls", 0) + 1,
     }
@@ -628,12 +675,23 @@ Budget Results:
 Create a clear draft that is ready for human review.
 """
 
-    response = llm.invoke(
-        [
-            SystemMessage(content="You are an expert travel planner."),
-            HumanMessage(content=prompt),
-        ]
-    )
+    try:
+        response = llm.invoke(
+            [
+                SystemMessage(content="You are an expert travel planner."),
+                HumanMessage(content=prompt),
+            ]
+        )
+        draft_itinerary = str(response.content)
+    except Exception as exc:
+        print(f"ITINERARY AGENT ERROR: {type(exc).__name__}: {exc}", flush=True)
+        draft_itinerary = (
+            "## Draft travel plan\n\n"
+            f"The AI drafting service is temporarily unavailable for this request:\n\n"
+            f"> {state['user_query']}\n\n"
+            "Live travel data could not be fully generated. Please retry when "
+            "the AI service is reachable."
+        )
 
     approval_request = (
         "Please review the generated draft itinerary. Approve it to create the "
@@ -641,7 +699,7 @@ Create a clear draft that is ready for human review.
     )
 
     return {
-        "itinerary": response.content,
+        "itinerary": draft_itinerary,
         "approval_request": approval_request,
         "messages": [AIMessage(content="Draft itinerary created for human review.")],
         "llm_calls": state.get("llm_calls", 0) + 1,
@@ -760,22 +818,31 @@ Important:
 - Incorporate the human feedback when revision was requested.
 """
 
-    response = llm.invoke(
-        [
-            SystemMessage(
-                content="You are a professional AI travel booking assistant."
-            ),
-            HumanMessage(content=final_prompt),
-        ]
-    )
+    try:
+        response = llm.invoke(
+            [
+                SystemMessage(
+                    content="You are a professional AI travel booking assistant."
+                ),
+                HumanMessage(content=final_prompt),
+            ]
+        )
+        final_response = str(response.content)
+        final_messages: list[AnyMessage] = [response]
+    except Exception as exc:
+        print(f"FINAL AGENT ERROR: {type(exc).__name__}: {exc}", flush=True)
+        final_response = state.get("itinerary", "")
+        if human_feedback and not approved:
+            final_response += f"\n\nRevision feedback received: {human_feedback}"
+        final_messages = [AIMessage(content=final_response)]
 
     cleared_fields = {
         AGENT_CONTENT_SPEC[agent][0]: "" for agent in agents_to_remove
     }
 
     return {
-        "final_response": response.content,
-        "messages": [response],
+        "final_response": final_response,
+        "messages": final_messages,
         "selected_agents": updated_selected_agents,
         "llm_calls": llm_calls + 1,
         **cleared_fields,
@@ -862,13 +929,24 @@ graph.add_edge("guardrail_blocked", END)
 # PostgreSQL Checkpointer - original persistence kept
 # =========================
 DATABASE_URL = get_database_url()
-_conn = psycopg.connect(
-    DATABASE_URL,
-    autocommit=True,
-    row_factory=dict_row,
-)
-checkpointer = PostgresSaver(_conn)
-checkpointer.setup()
+
+try:
+    _conn = psycopg.connect(
+        DATABASE_URL,
+        autocommit=True,
+        row_factory=dict_row,
+    )
+    checkpointer = PostgresSaver(_conn)
+    checkpointer.setup()
+except psycopg.OperationalError as exc:
+    # Keep local development and non-database routes usable when the remote
+    # database is unavailable. Production deployments should provide a
+    # reachable DATABASE_URL to retain durable thread persistence.
+    print(
+        "WARNING: PostgreSQL is unavailable; using an in-memory checkpointer. "
+        f"Travel threads will not survive restarts. Details: {exc}"
+    )
+    checkpointer = MemorySaver()
 
 travel_graph = graph.compile(checkpointer=checkpointer)
 
@@ -909,10 +987,10 @@ def _serialize_result(
             if interrupt_payload
             else result.get("approval_request", "")
         ),
-        "flight_results": result.get("flight_results", ""),
-        "hotel_results": result.get("hotel_results", ""),
-        "weather_results": result.get("weather_results", ""),
-        "budget_results": result.get("budget_results", ""),
+        "flight_results": _normalize_agent_result(result.get("flight_results", "")),
+        "hotel_results": _normalize_agent_result(result.get("hotel_results", "")),
+        "weather_results": _normalize_agent_result(result.get("weather_results", "")),
+        "budget_results": _normalize_agent_result(result.get("budget_results", "")),
         "itinerary": (
             interrupt_payload.get("draft_itinerary", "")
             if interrupt_payload

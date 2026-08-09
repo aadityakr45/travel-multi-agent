@@ -3,15 +3,13 @@ import json
 import traceback
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import (
     FileResponse,
-    HTMLResponse,
     JSONResponse,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from backend import (
@@ -44,28 +42,18 @@ app = FastAPI(
 )
 
 app.mount(
-    "/static",
-    StaticFiles(directory=str(BASE_DIR / "static")),
-    name="static",
-)
-app.mount(
     "/assets",
     StaticFiles(directory="assets"),
     name="assets"
 )
 
-# Redesigned React frontend (web/), built separately with `npm run build`.
-# Mounted only if present so `python app.py` still boots pre-build, falling
-# back to the legacy Jinja2 page below.
+# React frontend (web/), built separately with `npm run build`.
 if (WEB_DIST_DIR / "web-assets").is_dir():
     app.mount(
         "/web-assets",
         StaticFiles(directory=str(WEB_DIST_DIR / "web-assets")),
         name="web-assets",
     )
-
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
 
 class TravelRequest(BaseModel):
     message: str
@@ -78,20 +66,22 @@ class ApprovalRequest(BaseModel):
     feedback: str = ""
 
 
-def _serve_frontend(request: Request):
-    """Serve the built React app if available, else the legacy Jinja2 page."""
+def _serve_frontend():
+    """Serve the built React app; never fall back to the removed legacy UI."""
     if WEB_INDEX_HTML.is_file():
         return FileResponse(WEB_INDEX_HTML, media_type="text/html")
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={},
+    return JSONResponse(
+        status_code=503,
+        content={
+            "success": False,
+            "error": "React frontend is not built. Run `npm run build` in web/.",
+        },
     )
 
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return _serve_frontend(request)
+@app.get("/")
+async def home():
+    return _serve_frontend()
 
 
 @app.post("/api/travel")
@@ -300,12 +290,11 @@ async def favicon():
 
 
 # SPA fallback: must stay last so every route above (/api/*, /health,
-# /favicon.ico) and the /static, /assets, /web-assets mounts are matched
-# first. Lets client-side routes like /trips/new or /history be opened or
-# refreshed directly without a 404.
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-async def spa_fallback(request: Request, full_path: str):
-    return _serve_frontend(request)
+# /favicon.ico) and the /assets, /web-assets mounts are matched first. This
+# lets client-side routes like /trips/new or /history be refreshed directly.
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    return _serve_frontend()
 
 
 if __name__ == "__main__":

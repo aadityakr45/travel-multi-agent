@@ -85,7 +85,7 @@ The old template-based frontend has been removed. The supported frontend is
 - PostgreSQL for durable thread persistence (optional for local testing)
 - API keys for the services enabled in your environment
 
-## Setup
+## Environment configuration
 
 ### 1. Create the Python environment
 
@@ -313,4 +313,4 @@ additional MCP adapters, and automated tests.
 
 ## License
 
-This project follows the license in [LICENSE](LICENSE).
+This project is licensed under the terms in [LICENSE](LICENSE).

@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { TRIP_CATEGORIES } from "./agent-meta"
 
 export function PromptForm({
@@ -29,7 +28,7 @@ export function PromptForm({
 
   return (
     <Card className="glass-panel">
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <CardHeader>
         <div>
           <CardTitle>Where do you want to go?</CardTitle>
           <CardDescription>
@@ -37,13 +36,6 @@ export function PromptForm({
             2 lakhs.
           </CardDescription>
         </div>
-        <Badge variant="secondary" className="shrink-0 gap-1.5">
-          <span className="relative flex size-1.5">
-            <span className="absolute inline-flex size-full motion-safe:animate-ping rounded-full bg-success opacity-75" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-success" />
-          </span>
-          Online
-        </Badge>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
